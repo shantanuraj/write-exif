@@ -1,0 +1,11 @@
+{
+  "name": "write-exif",
+  "version": "1.0.0",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.2.3"
+  },
+  "dependencies": {
+    "piexifjs": "^1.0.6"
+  }
+}
