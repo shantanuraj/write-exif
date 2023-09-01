@@ -61,8 +61,7 @@ for (const file of files) {
 
   // Modify the created and updated timestamps
   // to match the timestamp of the photo
-  const time = ts.getTime() / 1000;
-  utimesSync(filepath(file.name), time, time);
+  utimesSync(filepath(file.name), ts, ts);
 }
 
 // DMS (Degrees Minutes Seconds) to Decimal Degrees
