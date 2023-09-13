@@ -34,6 +34,8 @@ for (const file of files) {
   if (localTz) {
     const localOffset = -ts.getTimezoneOffset() / 60;
     ts.setHours(ts.getHours() + localOffset);
+    const minuteOffset = -ts.getTimezoneOffset() % 60;
+    ts.setMinutes(ts.getMinutes() + minuteOffset);
   }
 
   const coordinates = file.name.slice(20, -4).split(" ");
