@@ -12,7 +12,7 @@ if (args.length > 0) {
 }
 
 if (args.some((arg) => arg === "-h" || arg === "--help")) {
-  console.log("Usage: write-exif [directory]");
+  console.log("Usage: write-exif [directory] [--tz]");
   process.exit(0);
 }
 

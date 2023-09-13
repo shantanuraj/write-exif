@@ -4,7 +4,7 @@
 
 ## Usage
 
-    ./write-exif [directory]
+    ./write-exif [directory] [--tz]
 
 Updates the file creation/modified timestamps to match the given date.
 
