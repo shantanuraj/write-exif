@@ -11,6 +11,11 @@ if (args.length > 0) {
   directory = args[0];
 }
 
+if (args.some((arg) => arg === "-h" || arg === "--help")) {
+  console.log("Usage: write-exif [directory]");
+  process.exit(0);
+}
+
 const files = readdirSync(directory, { withFileTypes: true }).filter(
   (f) => !f.isDirectory() && f.name.endsWith(".jpg")
 );
