@@ -16,6 +16,8 @@ if (args.some((arg) => arg === "-h" || arg === "--help")) {
   process.exit(0);
 }
 
+const localTz = args.some((arg) => arg === "--tz");
+
 const files = readdirSync(directory, { withFileTypes: true }).filter(
   (f) => !f.isDirectory() && f.name.endsWith(".jpg")
 );
@@ -29,6 +31,11 @@ for (const file of files) {
     time: file.name.slice(11, 19).replace(/-/g, ":"),
   };
   const ts = new Date(`${metadata.date} ${metadata.time}`);
+  if (localTz) {
+    const localOffset = -ts.getTimezoneOffset() / 60;
+    ts.setHours(ts.getHours() + localOffset);
+  }
+
   const coordinates = file.name.slice(20, -4).split(" ");
 
   const jpeg = readFileSync(filepath(file.name));
