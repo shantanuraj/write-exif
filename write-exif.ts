@@ -16,10 +16,17 @@ if (args.some((arg) => arg === "-h" || arg === "--help")) {
   process.exit(0);
 }
 
-const localTz = args.some((arg) => arg === "--tz");
+const localTz = args.some((arg) => arg.startsWith("--tz"));
+let localOffset = -new Date().getTimezoneOffset() / 60;
+if (localTz) {
+  const tzArg = args.find((arg) => arg.startsWith("--tz="));
+  if (tzArg) {
+    localOffset = parseInt(tzArg.slice(5), 10);
+  }
+}
 
 const files = readdirSync(directory, { withFileTypes: true }).filter(
-  (f) => !f.isDirectory() && f.name.endsWith(".jpg")
+  (f) => !f.isDirectory() && f.name.endsWith(".jpg"),
 );
 
 const filepath = (file: string) => `${directory}/${file}`;
@@ -32,7 +39,6 @@ for (const file of files) {
   };
   const ts = new Date(`${metadata.date} ${metadata.time}`);
   if (localTz) {
-    const localOffset = -ts.getTimezoneOffset() / 60;
     ts.setHours(ts.getHours() + localOffset);
     const minuteOffset = -ts.getTimezoneOffset() % 60;
     ts.setMinutes(ts.getMinutes() + minuteOffset);
@@ -93,7 +99,7 @@ function dec2exif(dec: number) {
   const degrees = Math.floor(absolute);
   const minutes = Math.floor((absolute - degrees) * 60);
   const seconds = ((absolute - degrees - minutes / 60) * 3600 * 10000).toFixed(
-    0
+    0,
   ); // to 4 decimal places
   return [
     [degrees, 1],
