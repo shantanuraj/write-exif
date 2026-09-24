@@ -12,18 +12,12 @@ if (args.length > 0) {
 }
 
 if (args.some((arg) => arg === "-h" || arg === "--help")) {
-  console.log("Usage: write-exif [directory] [--tz]");
+  console.log("Usage: write-exif [directory] [--tz=<hours>]");
   process.exit(0);
 }
 
-const localTz = args.some((arg) => arg.startsWith("--tz"));
-let localOffset = -new Date().getTimezoneOffset() / 60;
-if (localTz) {
-  const tzArg = args.find((arg) => arg.startsWith("--tz="));
-  if (tzArg) {
-    localOffset = parseInt(tzArg.slice(5), 10);
-  }
-}
+const tzArg = args.find((arg) => arg.startsWith("--tz="));
+const tzOffset = tzArg ? Number(tzArg.slice(5)) : undefined;
 
 const files = readdirSync(directory, { withFileTypes: true }).filter(
   (f) => !f.isDirectory() && f.name.endsWith(".jpg"),
@@ -33,16 +27,17 @@ const filepath = (file: string) => `${directory}/${file}`;
 
 // File name format: 2023-05-19-16-40-00-43°22'01.9"N 16°55'51.6"E.jpg
 for (const file of files) {
-  const metadata = {
-    date: file.name.slice(0, 10),
-    time: file.name.slice(11, 19).replace(/-/g, ":"),
-  };
-  const ts = new Date(`${metadata.date} ${metadata.time}`);
-  if (localTz) {
-    ts.setHours(ts.getHours() + localOffset);
-    const minuteOffset = -ts.getTimezoneOffset() % 60;
-    ts.setMinutes(ts.getMinutes() + minuteOffset);
-  }
+  const [year, month, day, hour, minute, second] = file.name
+    .slice(0, 19)
+    .split("-")
+    .map(Number);
+  const ts =
+    tzOffset === undefined
+      ? new Date(year, month - 1, day, hour, minute, second)
+      : new Date(
+          Date.UTC(year, month - 1, day, hour, minute, second) -
+            tzOffset * 3600 * 1000,
+        );
 
   const coordinates = file.name.slice(20, -4).split(" ");
 
@@ -52,10 +47,8 @@ for (const file of files) {
   const exifObj = piexif.load(data);
 
   // Add timestamp data
-  exifObj["Exif"][piexif.ExifIFD.DateTimeOriginal] = ts
-    .toISOString()
-    .replace(/T/, " ")
-    .replace(/\..+/, "");
+  exifObj["Exif"][piexif.ExifIFD.DateTimeOriginal] =
+    `${file.name.slice(0, 10).replace(/-/g, ":")} ${file.name.slice(11, 19).replace(/-/g, ":")}`;
 
   // Extract lat, long and their respective hemisphere (N/S, E/W)
   const lat = dms2dec(coordinates[0].substring(0, coordinates[0].length - 1)); // latitude

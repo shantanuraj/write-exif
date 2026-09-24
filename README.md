@@ -4,9 +4,11 @@
 
 ## Usage
 
-    ./write-exif [directory] [--tz]
+    ./write-exif [directory] [--tz=<hours>]
 
 Updates the file creation/modified timestamps to match the given date.
+The file name time is local wall-clock time; `--tz=<hours>` sets the UTC
+offset it was taken in (e.g. `--tz=2`), defaulting to the machine's timezone.
 
 Copies the metadata from file names onto their EXIF data, applies to
 all `jpg` files in the specified directory. Defaults to the current directory.
