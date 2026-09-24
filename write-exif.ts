@@ -2,8 +2,23 @@
 
 // SPDX-License-Identifier: MIT
 
-import { readFileSync, readdirSync, utimesSync, writeFileSync } from "fs";
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  utimesSync,
+  writeFileSync,
+} from "fs";
 import * as piexif from "piexifjs";
+
+type Roll = {
+  make?: string;
+  model?: string;
+  lens?: { make?: string; model?: string };
+  film?: string;
+  iso?: number;
+  flash?: boolean;
+};
 
 const args = process.argv.slice(2);
 let directory = ".";
@@ -24,6 +39,10 @@ const files = readdirSync(directory, { withFileTypes: true }).filter(
 );
 
 const filepath = (file: string) => `${directory}/${file}`;
+
+const roll: Roll | undefined = existsSync(filepath("roll.toml"))
+  ? Bun.TOML.parse(readFileSync(filepath("roll.toml"), "utf8"))
+  : undefined;
 
 // File name format: 2023-05-19-16-40-00-43°22'01.9"N 16°55'51.6"E.jpg
 for (const file of files) {
@@ -66,6 +85,10 @@ for (const file of files) {
   exifObj["GPS"][piexif.GPSIFD.GPSLongitudeRef] = longRef;
   exifObj["GPS"][piexif.GPSIFD.GPSLongitude] = longitude;
 
+  if (roll) {
+    writeRoll(exifObj, roll);
+  }
+
   const exifbytes = piexif.dump(exifObj);
   const newData = piexif.insert(exifbytes, data);
   const newJpeg = Buffer.from(newData, "binary");
@@ -75,6 +98,24 @@ for (const file of files) {
   // Modify the created and updated timestamps
   // to match the timestamp of the photo
   utimesSync(filepath(file.name), ts, ts);
+}
+
+function writeRoll(exifObj: any, roll: Roll) {
+  const tags: [string, number, unknown][] = [
+    ["0th", piexif.ImageIFD.Make, roll.make],
+    ["0th", piexif.ImageIFD.Model, roll.model],
+    ["0th", piexif.ImageIFD.ImageDescription, roll.film],
+    ["Exif", piexif.ExifIFD.LensMake, roll.lens?.make],
+    ["Exif", piexif.ExifIFD.LensModel, roll.lens?.model],
+    ["Exif", piexif.ExifIFD.ISOSpeedRatings, roll.iso],
+    ["Exif", piexif.ExifIFD.Flash, roll.flash === undefined ? undefined : Number(roll.flash)],
+    ["Exif", piexif.ExifIFD.FileSource, "\x01"],
+  ];
+  for (const [ifd, tag, value] of tags) {
+    if (value !== undefined) {
+      exifObj[ifd][tag] = value;
+    }
+  }
 }
 
 // DMS (Degrees Minutes Seconds) to Decimal Degrees

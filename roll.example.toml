@@ -1,0 +1,9 @@
+make = "Contax"
+model = "G2"
+film = "Kodak Portra 400"
+iso = 400
+flash = false
+
+[lens]
+make = "Carl Zeiss"
+model = "Biogon T* 28mm f/2.8"

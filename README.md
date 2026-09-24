@@ -19,6 +19,24 @@ File name format: 2023-05-09-19-51-00-52°22'42.2"N 4°52'59.9"E.jpg
 YYYY-MM-DD-HH-MM-SS-DD°MM'SS.S"N DD°MM'SS.S"E.jpg # [date]-[time]-[geo coordinates].jpg
 ```
 
+### Roll metadata
+
+For film scans, put a `roll.toml` in the directory to apply per-roll
+metadata to every frame. All fields are optional.
+See [`roll.example.toml`](./roll.example.toml).
+
+| Field        | EXIF tag           |
+| ------------ | ------------------ |
+| `make`       | `Make`             |
+| `model`      | `Model`            |
+| `film`       | `ImageDescription` |
+| `iso`        | `ISOSpeedRatings`  |
+| `flash`      | `Flash`            |
+| `lens.make`  | `LensMake`         |
+| `lens.model` | `LensModel`        |
+
+When `roll.toml` is present, `FileSource` is set to film scanner.
+
 ### Setup
 
 I use [bun](https://github.com/oven-sh/bun) to run the script.
