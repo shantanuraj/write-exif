@@ -9,135 +9,242 @@ import {
   utimesSync,
   writeFileSync,
 } from "fs";
-import * as piexif from "piexifjs";
+import piexif from "piexifjs";
 
-type Roll = {
+type Location = { lat: number; lon: number };
+
+type Metadata = {
   make?: string;
   model?: string;
   lens?: { make?: string; model?: string };
   film?: string;
   iso?: number;
   flash?: boolean;
+  location?: string | [number, number];
 };
 
+type Roll = Metadata & {
+  start?: Temporal.PlainDateTime;
+  end?: Temporal.PlainDateTime;
+  reverse?: boolean;
+  tz?: string;
+  frames?: Record<string, Metadata>;
+};
+
+type Frame = {
+  file: string;
+  time?: Temporal.PlainDateTime;
+  location?: Location;
+  metadata?: Metadata;
+};
+
+type Tag = [ifd: "0th" | "Exif" | "GPS", tag: number, value: unknown];
+
 const args = process.argv.slice(2);
-let directory = ".";
-if (args.length > 0) {
-  directory = args[0];
-}
 
 if (args.some((arg) => arg === "-h" || arg === "--help")) {
-  console.log("Usage: write-exif [directory] [--tz=<hours>]");
+  console.log("Usage: write-exif [directory] [--tz=<zone>]");
   process.exit(0);
 }
 
-const tzArg = args.find((arg) => arg.startsWith("--tz="));
-const tzOffset = tzArg ? Number(tzArg.slice(5)) : undefined;
-
-const files = readdirSync(directory, { withFileTypes: true }).filter(
-  (f) => !f.isDirectory() && f.name.endsWith(".jpg"),
-);
-
+const directory = args.find((arg) => !arg.startsWith("-")) ?? ".";
 const filepath = (file: string) => `${directory}/${file}`;
 
 const roll: Roll | undefined = existsSync(filepath("roll.toml"))
-  ? Bun.TOML.parse(readFileSync(filepath("roll.toml"), "utf8"))
+  ? (Bun.TOML.parse(readFileSync(filepath("roll.toml"), "utf8")) as Roll)
   : undefined;
 
-// File name format: 2023-05-19-16-40-00-43°22'01.9"N 16°55'51.6"E.jpg
-for (const file of files) {
-  const [year, month, day, hour, minute, second] = file.name
-    .slice(0, 19)
-    .split("-")
-    .map(Number);
-  const ts =
-    tzOffset === undefined
-      ? new Date(year, month - 1, day, hour, minute, second)
-      : new Date(
-          Date.UTC(year, month - 1, day, hour, minute, second) -
-            tzOffset * 3600 * 1000,
-        );
+const tz =
+  roll?.tz ??
+  args.find((arg) => arg.startsWith("--tz="))?.slice(5) ??
+  Temporal.Now.timeZoneId();
 
-  const coordinates = file.name.slice(20, -4).split(" ");
+const frames = plan(
+  readdirSync(directory, { withFileTypes: true })
+    .filter((f) => !f.isDirectory() && f.name.endsWith(".jpg"))
+    .map((f) => f.name)
+    .sort(),
+  roll,
+);
 
-  const jpeg = readFileSync(filepath(file.name));
-  const data = jpeg.toString("binary");
-
-  const exifObj = piexif.load(data);
-
-  // Add timestamp data
-  exifObj["Exif"][piexif.ExifIFD.DateTimeOriginal] =
-    `${file.name.slice(0, 10).replace(/-/g, ":")} ${file.name.slice(11, 19).replace(/-/g, ":")}`;
-
-  // Extract lat, long and their respective hemisphere (N/S, E/W)
-  const lat = dms2dec(coordinates[0].substring(0, coordinates[0].length - 1)); // latitude
-  const long = dms2dec(coordinates[1].substring(0, coordinates[1].length - 1)); // longitude
-  const latRef = coordinates[0].slice(-1) == "N" ? "N" : "S";
-  const longRef = coordinates[1].slice(-1) == "E" ? "E" : "W";
-
-  // Convert decimal to exif format (rationals)
-  const latitude = dec2exif(lat);
-  const longitude = dec2exif(long);
-
-  // Add GPS data
-  exifObj["GPS"][piexif.GPSIFD.GPSLatitudeRef] = latRef;
-  exifObj["GPS"][piexif.GPSIFD.GPSLatitude] = latitude;
-  exifObj["GPS"][piexif.GPSIFD.GPSLongitudeRef] = longRef;
-  exifObj["GPS"][piexif.GPSIFD.GPSLongitude] = longitude;
-
-  if (roll) {
-    writeRoll(exifObj, roll);
-  }
-
-  const exifbytes = piexif.dump(exifObj);
-  const newData = piexif.insert(exifbytes, data);
-  const newJpeg = Buffer.from(newData, "binary");
-
-  writeFileSync(filepath(file.name), newJpeg);
-
-  // Modify the created and updated timestamps
-  // to match the timestamp of the photo
-  utimesSync(filepath(file.name), ts, ts);
+for (const frame of frames) {
+  write(frame);
 }
 
-function writeRoll(exifObj: any, roll: Roll) {
-  const tags: [string, number, unknown][] = [
-    ["0th", piexif.ImageIFD.Make, roll.make],
-    ["0th", piexif.ImageIFD.Model, roll.model],
-    ["0th", piexif.ImageIFD.ImageDescription, roll.film],
-    ["Exif", piexif.ExifIFD.LensMake, roll.lens?.make],
-    ["Exif", piexif.ExifIFD.LensModel, roll.lens?.model],
-    ["Exif", piexif.ExifIFD.ISOSpeedRatings, roll.iso],
-    ["Exif", piexif.ExifIFD.Flash, roll.flash === undefined ? undefined : Number(roll.flash)],
-    ["Exif", piexif.ExifIFD.FileSource, "\x01"],
-  ];
-  for (const [ifd, tag, value] of tags) {
+function plan(files: string[], roll?: Roll): Frame[] {
+  const named = files.map((file) => ({ file, ...parseName(file) }));
+  if (!roll) {
+    return named;
+  }
+
+  const { start, end, reverse, tz, frames = {}, ...base } = roll;
+  const ordered =
+    reverse && !named.every((frame) => frame.time) ? named.reverse() : named;
+
+  const unknown = Object.keys(frames).filter(
+    (index) =>
+      !(Number.isInteger(+index) && +index >= 1 && +index <= ordered.length),
+  );
+  if (unknown.length > 0) {
+    throw new Error(
+      `roll.toml has frames ${unknown.join(", ")} but the roll has ${ordered.length} frames`,
+    );
+  }
+
+  const times = spread(start, end, ordered.length);
+
+  return ordered.map((frame, i) => {
+    const override = frames[i + 1] ?? {};
+    const metadata = {
+      ...base,
+      ...override,
+      lens: { ...base.lens, ...override.lens },
+    };
+    return {
+      file: frame.file,
+      time: times?.[i] ?? frame.time,
+      location: metadata.location
+        ? parseLocation(metadata.location)
+        : frame.location,
+      metadata,
+    };
+  });
+}
+
+function spread(
+  start: Temporal.PlainDateTime | undefined,
+  end: Temporal.PlainDateTime | undefined,
+  count: number,
+) {
+  if (!start && !end) {
+    return undefined;
+  }
+  if (!start || !end) {
+    throw new Error("roll.toml needs both start and end");
+  }
+  const seconds = start.until(end, { largestUnit: "seconds" }).seconds;
+  if (seconds < 0) {
+    throw new Error("roll.toml end is before start");
+  }
+  const step = count > 1 ? seconds / (count - 1) : 0;
+  return Array.from({ length: count }, (_, i) =>
+    start.add({ seconds: Math.round(i * step) }),
+  );
+}
+
+function write(frame: Frame) {
+  const missing = [!frame.time && "time", !frame.location && "location"].filter(
+    Boolean,
+  );
+  if (missing.length > 0) {
+    console.warn(`${frame.file}: no ${missing.join(" or ")} to write`);
+  }
+
+  const data = readFileSync(filepath(frame.file)).toString("binary");
+  const exif = piexif.load(data);
+
+  for (const [ifd, tag, value] of tags(frame)) {
     if (value !== undefined) {
-      exifObj[ifd][tag] = value;
+      exif[ifd] = { ...exif[ifd], [tag]: value };
     }
   }
+
+  writeFileSync(
+    filepath(frame.file),
+    Buffer.from(piexif.insert(piexif.dump(exif), data), "binary"),
+  );
+
+  if (frame.time) {
+    const instant = new Date(frame.time.toZonedDateTime(tz).epochMilliseconds);
+    utimesSync(filepath(frame.file), instant, instant);
+  }
 }
 
-// DMS (Degrees Minutes Seconds) to Decimal Degrees
-function dms2dec(dms: string) {
-  const match = dms.match(/(\d+)°(\d+)'(\d+(\.\d+)?)"/)!;
-  const degrees = Number(match[1]);
-  const minutes = Number(match[2]);
-  const seconds = Number(match[3]);
-  return degrees + minutes / 60 + seconds / 3600;
-}
-
-// Decimal Degrees to EXIF format (rationals)
-function dec2exif(dec: number) {
-  const absolute = Math.abs(dec);
-  const degrees = Math.floor(absolute);
-  const minutes = Math.floor((absolute - degrees) * 60);
-  const seconds = ((absolute - degrees - minutes / 60) * 3600 * 10000).toFixed(
-    0,
-  ); // to 4 decimal places
+function tags({ time, location, metadata }: Frame): Tag[] {
+  const [date, clock] = time
+    ? time.toString({ smallestUnit: "second" }).split("T")
+    : [];
+  const position: Tag[] = location
+    ? [
+        ["GPS", piexif.GPSIFD.GPSLatitudeRef, location.lat < 0 ? "S" : "N"],
+        ["GPS", piexif.GPSIFD.GPSLatitude, rational(location.lat)],
+        ["GPS", piexif.GPSIFD.GPSLongitudeRef, location.lon < 0 ? "W" : "E"],
+        ["GPS", piexif.GPSIFD.GPSLongitude, rational(location.lon)],
+      ]
+    : [];
+  const roll: Tag[] = metadata
+    ? [
+        ["0th", piexif.ImageIFD.Make, metadata.make],
+        ["0th", piexif.ImageIFD.Model, metadata.model],
+        ["0th", piexif.ImageIFD.ImageDescription, metadata.film],
+        ["Exif", piexif.ExifIFD.LensMake, metadata.lens?.make],
+        ["Exif", piexif.ExifIFD.LensModel, metadata.lens?.model],
+        ["Exif", piexif.ExifIFD.ISOSpeedRatings, metadata.iso],
+        [
+          "Exif",
+          piexif.ExifIFD.Flash,
+          metadata.flash === undefined ? undefined : Number(metadata.flash),
+        ],
+        ["Exif", piexif.ExifIFD.FileSource, "\x01"],
+      ]
+    : [];
   return [
-    [degrees, 1],
-    [minutes, 1],
-    [seconds, 10000],
+    [
+      "Exif",
+      piexif.ExifIFD.DateTimeOriginal,
+      date && `${date.replaceAll("-", ":")} ${clock}`,
+    ],
+    ...position,
+    ...roll,
+  ];
+}
+
+function parseName(file: string): Omit<Frame, "file"> {
+  const match = file.match(
+    /^(\d{4}-\d{2}-\d{2})-(\d{2})-(\d{2})-(\d{2})-(.+)\.jpg$/,
+  );
+  if (!match) {
+    return {};
+  }
+  const [, date, hour, minute, second, location] = match;
+  return {
+    time: Temporal.PlainDateTime.from(`${date}T${hour}:${minute}:${second}`),
+    location: matchDms(location),
+  };
+}
+
+function parseLocation(location: string | [number, number]): Location {
+  if (Array.isArray(location)) {
+    const [lat, lon] = location;
+    return { lat, lon };
+  }
+  const parsed = matchDms(location);
+  if (!parsed) {
+    throw new Error(`Invalid location: ${location}`);
+  }
+  return parsed;
+}
+
+function matchDms(location: string): Location | undefined {
+  const match = location.match(
+    /^(\d+)°(\d+)'(\d+(?:\.\d+)?)"([NS]) (\d+)°(\d+)'(\d+(?:\.\d+)?)"([EW])$/,
+  );
+  if (!match) {
+    return undefined;
+  }
+  const [, latD, latM, latS, latRef, lonD, lonM, lonS, lonRef] = match;
+  const dec = (d: string, m: string, s: string) => +d + +m / 60 + +s / 3600;
+  return {
+    lat: dec(latD, latM, latS) * (latRef === "N" ? 1 : -1),
+    lon: dec(lonD, lonM, lonS) * (lonRef === "E" ? 1 : -1),
+  };
+}
+
+function rational(dec: number) {
+  const units = Math.round(Math.abs(dec) * 36000000);
+  return [
+    [Math.floor(units / 36000000), 1],
+    [Math.floor((units % 36000000) / 600000), 1],
+    [units % 600000, 10000],
   ];
 }

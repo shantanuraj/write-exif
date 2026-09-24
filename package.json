@@ -6,6 +6,8 @@
   },
   "license": "MIT",
   "devDependencies": {
-    "@types/bun": "^1.4.2"
+    "@types/bun": "^1.4.2",
+    "@types/piexifjs": "^1.0.0",
+    "temporal-spec": "^1.0.1"
   }
 }

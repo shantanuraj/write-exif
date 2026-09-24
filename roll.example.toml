@@ -3,7 +3,19 @@ model = "G2"
 film = "Kodak Portra 400"
 iso = 400
 flash = false
+location = '''52°22'16.3"N 4°55'53.1"E'''
+start = 2026-09-19T19:10:00
+end = 2026-09-19T21:30:00
+reverse = true
+tz = "Europe/Amsterdam"
 
 [lens]
 make = "Carl Zeiss"
 model = "Biogon T* 28mm f/2.8"
+
+[frames.12]
+flash = true
+location = [52.3731, 4.8922]
+
+[frames.12.lens]
+model = "Biogon T* 45mm f/2"

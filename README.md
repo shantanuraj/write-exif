@@ -4,14 +4,13 @@
 
 ## Usage
 
-    ./write-exif [directory] [--tz=<hours>]
+    ./write-exif [directory] [--tz=<zone>]
 
-Updates the file creation/modified timestamps to match the given date.
-The file name time is local wall-clock time; `--tz=<hours>` sets the UTC
-offset it was taken in (e.g. `--tz=2`), defaulting to the machine's timezone.
+Writes metadata onto the EXIF data of all `jpg` files in the directory,
+which defaults to the current directory, and sets each file's
+creation/modified timestamps to when the photo was taken.
 
-Copies the metadata from file names onto their EXIF data, applies to
-all `jpg` files in the specified directory. Defaults to the current directory.
+Time and location come from the file name, or from `roll.toml` when present.
 
 File name format: 2023-05-09-19-51-00-52°22'42.2"N 4°52'59.9"E.jpg
 
@@ -19,11 +18,14 @@ File name format: 2023-05-09-19-51-00-52°22'42.2"N 4°52'59.9"E.jpg
 YYYY-MM-DD-HH-MM-SS-DD°MM'SS.S"N DD°MM'SS.S"E.jpg # [date]-[time]-[geo coordinates].jpg
 ```
 
+Times are local wall-clock times. `--tz=<zone>` sets the time zone they
+were taken in, e.g. `--tz=Europe/Amsterdam` or `--tz=+02:00`, defaulting
+to the machine's time zone.
+
 ### Roll metadata
 
-For film scans, put a `roll.toml` in the directory to apply per-roll
-metadata to every frame. All fields are optional.
-See [`roll.example.toml`](./roll.example.toml).
+For film scans, put a `roll.toml` in the directory to describe the roll.
+All fields are optional. See [`roll.example.toml`](./roll.example.toml).
 
 | Field        | EXIF tag           |
 | ------------ | ------------------ |
@@ -34,8 +36,22 @@ See [`roll.example.toml`](./roll.example.toml).
 | `flash`      | `Flash`            |
 | `lens.make`  | `LensMake`         |
 | `lens.model` | `LensModel`        |
+| `location`   | `GPS*`             |
 
 When `roll.toml` is present, `FileSource` is set to film scanner.
+
+`location` is either `"DD°MM'SS.S\"N DD°MM'SS.S\"E"` or `[latitude, longitude]`.
+
+`start` and `end` spread the frames evenly across that time range, in
+shooting order. Frames are in file name order; `reverse = true` flips it
+for scanners that number frames backwards. Files already named by time
+are always in time order.
+
+`tz` is the time zone the roll was shot in, and takes precedence over `--tz`.
+
+`roll.toml` takes precedence over the file name. Values under
+`[frames.<n>]` override the roll for the n-th frame in shooting order,
+counting from 1.
 
 ### Setup
 
