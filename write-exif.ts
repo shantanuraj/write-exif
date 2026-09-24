@@ -44,7 +44,7 @@ type Tag = [ifd: "0th" | "Exif" | "GPS", tag: number, value: unknown];
 const args = process.argv.slice(2);
 
 if (args.some((arg) => arg === "-h" || arg === "--help")) {
-  console.log("Usage: write-exif [directory] [--rename]");
+  console.log("Usage: write-exif [directory] [--rename] [--dry]");
   process.exit(0);
 }
 
@@ -66,6 +66,11 @@ const frames = plan(
 const targets = args.includes("--rename") ? frames.map(name) : undefined;
 if (targets && new Set(targets).size !== targets.length) {
   throw new Error("Rename would give several frames the same name");
+}
+
+if (args.includes("--dry")) {
+  preview(frames, targets);
+  process.exit(0);
 }
 
 for (const frame of frames) {
@@ -190,14 +195,60 @@ function write(frame: Frame) {
   );
 
   if (frame.time) {
-    const zone = frame.location
-      ? tzLookup(frame.location.lat, frame.location.lon)
-      : Temporal.Now.timeZoneId();
     const instant = new Date(
-      frame.time.toZonedDateTime(zone).epochMilliseconds,
+      frame.time.toZonedDateTime(zone(frame)).epochMilliseconds,
     );
     utimesSync(filepath(frame.file), instant, instant);
   }
+}
+
+function zone({ location }: Frame) {
+  return location
+    ? tzLookup(location.lat, location.lon)
+    : Temporal.Now.timeZoneId();
+}
+
+function preview(frames: Frame[], targets?: string[]) {
+  const join = (...parts: unknown[]) => parts.filter(Boolean).join(" ");
+  const rows: Record<string, string>[] = frames.map((frame, i) => ({
+    file: frame.file,
+    time:
+      frame.time?.toString({ smallestUnit: "second" }).replace("T", " ") ?? "",
+    zone: frame.time ? zone(frame) : "",
+    location: frame.location ? position(frame.location) : "",
+    camera: join(frame.metadata?.make, frame.metadata?.model),
+    lens: join(frame.metadata?.lens?.make, frame.metadata?.lens?.model),
+    film: join(frame.metadata?.film),
+    iso: join(frame.metadata?.iso),
+    flash:
+      frame.metadata?.flash === undefined
+        ? ""
+        : frame.metadata.flash
+          ? "yes"
+          : "no",
+    ...(targets && { rename: targets[i] }),
+  }));
+  const shared = Object.keys(rows[0] ?? {}).filter(
+    (key) =>
+      key !== "file" &&
+      key !== "time" &&
+      rows.every((row) => row[key] === rows[0][key]),
+  );
+  for (const key of shared) {
+    if (rows[0][key]) {
+      console.log(`${key}: ${rows[0][key]}`);
+    }
+  }
+  console.table(
+    Object.fromEntries(
+      rows.map((row, i) => [
+        i + 1,
+        Object.fromEntries(
+          Object.entries(row).filter(([key]) => !shared.includes(key)),
+        ),
+      ]),
+    ),
+  );
 }
 
 function tags({ time, location, metadata }: Frame): Tag[] {
@@ -258,7 +309,11 @@ function name({ file, time, location }: Frame) {
     throw new Error(`${file}: rename needs both time and location`);
   }
   const [date, clock] = time.toString({ smallestUnit: "second" }).split("T");
-  return `${date}-${clock.replaceAll(":", "-")}-${dms(location.lat, "N", "S")} ${dms(location.lon, "E", "W")}.jpg`;
+  return `${date}-${clock.replaceAll(":", "-")}-${position(location)}.jpg`;
+}
+
+function position({ lat, lon }: Location) {
+  return `${dms(lat, "N", "S")} ${dms(lon, "E", "W")}`;
 }
 
 function parseLocation(location: string | [number, number]): Location {

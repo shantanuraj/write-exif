@@ -4,7 +4,7 @@
 
 ## Usage
 
-    ./write-exif [directory] [--rename]
+    ./write-exif [directory] [--rename] [--dry]
 
 Writes metadata onto the EXIF data of all `jpg` files in the directory,
 which defaults to the current directory, and sets each file's
@@ -22,6 +22,9 @@ Times are local wall-clock times. The time zone is derived from the
 location, falling back to the machine's time zone when there is none.
 
 `--rename` renames every file to the format above.
+
+`--dry` prints a table of what each frame would get, without writing
+anything.
 
 ### Roll metadata
 
