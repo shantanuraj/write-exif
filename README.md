@@ -4,7 +4,7 @@
 
 ## Usage
 
-    ./write-exif [directory] [--tz=<zone>] [--rename]
+    ./write-exif [directory] [--rename]
 
 Writes metadata onto the EXIF data of all `jpg` files in the directory,
 which defaults to the current directory, and sets each file's
@@ -18,9 +18,8 @@ File name format: 2023-05-09-19-51-00-52°22'42.2"N 4°52'59.9"E.jpg
 YYYY-MM-DD-HH-MM-SS-DD°MM'SS.S"N DD°MM'SS.S"E.jpg # [date]-[time]-[geo coordinates].jpg
 ```
 
-Times are local wall-clock times. `--tz=<zone>` sets the time zone they
-were taken in, e.g. `--tz=Europe/Amsterdam` or `--tz=+02:00`, defaulting
-to the machine's time zone.
+Times are local wall-clock times. The time zone is derived from the
+location, falling back to the machine's time zone when there is none.
 
 `--rename` renames every file to the format above.
 
@@ -48,8 +47,6 @@ When `roll.toml` is present, `FileSource` is set to film scanner.
 shooting order. Frames are in file name order; `reverse = true` flips it
 for scanners that number frames backwards. Files already named by time
 are always in time order.
-
-`tz` is the time zone the roll was shot in, and takes precedence over `--tz`.
 
 `roll.toml` takes precedence over the file name. Values under
 `[frames.<n>]` override the roll for the n-th frame in shooting order,

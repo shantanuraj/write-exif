@@ -10,6 +10,7 @@ import {
   utimesSync,
   writeFileSync,
 } from "fs";
+import tzLookup from "@photostructure/tz-lookup";
 import piexif from "piexifjs";
 
 type Location = { lat: number; lon: number };
@@ -28,7 +29,6 @@ type Roll = Metadata & {
   start?: Temporal.PlainDateTime;
   end?: Temporal.PlainDateTime;
   reverse?: boolean;
-  tz?: string;
   frames?: Record<string, Metadata>;
 };
 
@@ -44,7 +44,7 @@ type Tag = [ifd: "0th" | "Exif" | "GPS", tag: number, value: unknown];
 const args = process.argv.slice(2);
 
 if (args.some((arg) => arg === "-h" || arg === "--help")) {
-  console.log("Usage: write-exif [directory] [--tz=<zone>] [--rename]");
+  console.log("Usage: write-exif [directory] [--rename]");
   process.exit(0);
 }
 
@@ -54,11 +54,6 @@ const filepath = (file: string) => `${directory}/${file}`;
 const roll: Roll | undefined = existsSync(filepath("roll.toml"))
   ? (Bun.TOML.parse(readFileSync(filepath("roll.toml"), "utf8")) as Roll)
   : undefined;
-
-const tz =
-  roll?.tz ??
-  args.find((arg) => arg.startsWith("--tz="))?.slice(5) ??
-  Temporal.Now.timeZoneId();
 
 const frames = plan(
   readdirSync(directory, { withFileTypes: true })
@@ -96,7 +91,7 @@ function plan(files: string[], roll?: Roll): Frame[] {
     return named;
   }
 
-  const { start, end, reverse, tz, frames = {}, ...base } = roll;
+  const { start, end, reverse, frames = {}, ...base } = roll;
   const ordered =
     reverse && !named.every((frame) => frame.time) ? named.reverse() : named;
 
@@ -174,7 +169,12 @@ function write(frame: Frame) {
   );
 
   if (frame.time) {
-    const instant = new Date(frame.time.toZonedDateTime(tz).epochMilliseconds);
+    const zone = frame.location
+      ? tzLookup(frame.location.lat, frame.location.lon)
+      : Temporal.Now.timeZoneId();
+    const instant = new Date(
+      frame.time.toZonedDateTime(zone).epochMilliseconds,
+    );
     utimesSync(filepath(frame.file), instant, instant);
   }
 }
