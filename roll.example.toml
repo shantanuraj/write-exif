@@ -13,6 +13,7 @@ make = "Carl Zeiss"
 model = "Biogon T* 28mm f/2.8"
 
 [frames.12]
+time = 2026-09-19T20:05:00
 flash = true
 location = [52.3731, 4.8922]
 

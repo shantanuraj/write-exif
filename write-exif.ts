@@ -29,7 +29,7 @@ type Roll = Metadata & {
   start?: Temporal.PlainDateTime;
   end?: Temporal.PlainDateTime;
   reverse?: boolean;
-  frames?: Record<string, Metadata>;
+  frames?: Record<string, Metadata & { time?: Temporal.PlainDateTime }>;
 };
 
 type Frame = {
@@ -105,10 +105,16 @@ function plan(files: string[], roll?: Roll): Frame[] {
     );
   }
 
-  const times = spread(start, end, ordered.length);
+  const times = spread(ordered.length, [
+    [0, start],
+    [ordered.length - 1, end],
+    ...Object.entries(frames).map(
+      ([index, frame]) => [+index - 1, frame.time] as const,
+    ),
+  ]);
 
   return ordered.map((frame, i) => {
-    const override = frames[i + 1] ?? {};
+    const { time, ...override } = frames[i + 1] ?? {};
     const metadata = {
       ...base,
       ...override,
@@ -116,7 +122,7 @@ function plan(files: string[], roll?: Roll): Frame[] {
     };
     return {
       file: frame.file,
-      time: times?.[i] ?? frame.time,
+      time: times[i] ?? frame.time,
       location: metadata.location
         ? parseLocation(metadata.location)
         : frame.location,
@@ -126,24 +132,39 @@ function plan(files: string[], roll?: Roll): Frame[] {
 }
 
 function spread(
-  start: Temporal.PlainDateTime | undefined,
-  end: Temporal.PlainDateTime | undefined,
   count: number,
+  pins: (readonly [number, Temporal.PlainDateTime | undefined])[],
 ) {
-  if (!start && !end) {
-    return undefined;
-  }
-  if (!start || !end) {
-    throw new Error("roll.toml needs both start and end");
-  }
-  const seconds = start.until(end, { largestUnit: "seconds" }).seconds;
-  if (seconds < 0) {
-    throw new Error("roll.toml end is before start");
-  }
-  const step = count > 1 ? seconds / (count - 1) : 0;
-  return Array.from({ length: count }, (_, i) =>
-    start.add({ seconds: Math.round(i * step) }),
-  );
+  const anchors = [
+    ...new Map(
+      pins.filter((pin): pin is [number, Temporal.PlainDateTime] => !!pin[1]),
+    ),
+  ].sort(([a], [b]) => a - b);
+
+  anchors.forEach(([index, time], k) => {
+    if (k > 0 && Temporal.PlainDateTime.compare(anchors[k - 1][1], time) > 0) {
+      throw new Error(`roll.toml time goes backwards at frame ${index + 1}`);
+    }
+  });
+
+  return Array.from({ length: count }, (_, i) => {
+    const right = anchors.findIndex(([index]) => index >= i);
+    if (right === -1) {
+      return undefined;
+    }
+    const [to, later] = anchors[right];
+    if (to === i) {
+      return later;
+    }
+    if (right === 0) {
+      return undefined;
+    }
+    const [from, earlier] = anchors[right - 1];
+    const seconds = earlier.until(later, { largestUnit: "seconds" }).seconds;
+    return earlier.add({
+      seconds: Math.round((seconds * (i - from)) / (to - from)),
+    });
+  });
 }
 
 function write(frame: Frame) {

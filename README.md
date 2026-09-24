@@ -43,10 +43,14 @@ When `roll.toml` is present, `FileSource` is set to film scanner.
 
 `location` is either `"DD°MM'SS.S\"N DD°MM'SS.S\"E"` or `[latitude, longitude]`.
 
-`start` and `end` spread the frames evenly across that time range, in
-shooting order. Frames are in file name order; `reverse = true` flips it
-for scanners that number frames backwards. Files already named by time
-are always in time order.
+`start` and `end` are the times of the first and last frame. A `time`
+under `[frames.<n>]` pins that frame. Frames between two known times are
+spread evenly across them, in shooting order; frames without a known time
+on both sides get none.
+
+Frames are in file name order; `reverse = true` flips it for scanners
+that number frames backwards. Files already named by time are always in
+time order.
 
 `roll.toml` takes precedence over the file name. Values under
 `[frames.<n>]` override the roll for the n-th frame in shooting order,
