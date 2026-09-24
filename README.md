@@ -4,7 +4,7 @@
 
 ## Usage
 
-    ./write-exif [directory] [--tz=<zone>]
+    ./write-exif [directory] [--tz=<zone>] [--rename]
 
 Writes metadata onto the EXIF data of all `jpg` files in the directory,
 which defaults to the current directory, and sets each file's
@@ -21,6 +21,8 @@ YYYY-MM-DD-HH-MM-SS-DD°MM'SS.S"N DD°MM'SS.S"E.jpg # [date]-[time]-[geo coordin
 Times are local wall-clock times. `--tz=<zone>` sets the time zone they
 were taken in, e.g. `--tz=Europe/Amsterdam` or `--tz=+02:00`, defaulting
 to the machine's time zone.
+
+`--rename` renames every file to the format above.
 
 ### Roll metadata
 

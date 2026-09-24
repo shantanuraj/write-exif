@@ -6,6 +6,7 @@ import {
   existsSync,
   readFileSync,
   readdirSync,
+  renameSync,
   utimesSync,
   writeFileSync,
 } from "fs";
@@ -43,7 +44,7 @@ type Tag = [ifd: "0th" | "Exif" | "GPS", tag: number, value: unknown];
 const args = process.argv.slice(2);
 
 if (args.some((arg) => arg === "-h" || arg === "--help")) {
-  console.log("Usage: write-exif [directory] [--tz=<zone>]");
+  console.log("Usage: write-exif [directory] [--tz=<zone>] [--rename]");
   process.exit(0);
 }
 
@@ -67,8 +68,26 @@ const frames = plan(
   roll,
 );
 
+const targets = args.includes("--rename") ? frames.map(name) : undefined;
+if (targets && new Set(targets).size !== targets.length) {
+  throw new Error("Rename would give several frames the same name");
+}
+
 for (const frame of frames) {
   write(frame);
+}
+
+if (targets) {
+  const moves = frames
+    .map((frame, i) => [frame.file, targets[i]])
+    .filter(([from, to]) => from !== to);
+  for (const [from] of moves) {
+    renameSync(filepath(from), filepath(`${from}.rename`));
+  }
+  for (const [from, to] of moves) {
+    renameSync(filepath(`${from}.rename`), filepath(to));
+    console.log(`${from} -> ${to}`);
+  }
 }
 
 function plan(files: string[], roll?: Roll): Frame[] {
@@ -213,6 +232,14 @@ function parseName(file: string): Omit<Frame, "file"> {
   };
 }
 
+function name({ file, time, location }: Frame) {
+  if (!time || !location) {
+    throw new Error(`${file}: rename needs both time and location`);
+  }
+  const [date, clock] = time.toString({ smallestUnit: "second" }).split("T");
+  return `${date}-${clock.replaceAll(":", "-")}-${dms(location.lat, "N", "S")} ${dms(location.lon, "E", "W")}.jpg`;
+}
+
 function parseLocation(location: string | [number, number]): Location {
   if (Array.isArray(location)) {
     const [lat, lon] = location;
@@ -238,6 +265,14 @@ function matchDms(location: string): Location | undefined {
     lat: dec(latD, latM, latS) * (latRef === "N" ? 1 : -1),
     lon: dec(lonD, lonM, lonS) * (lonRef === "E" ? 1 : -1),
   };
+}
+
+function dms(dec: number, positive: string, negative: string) {
+  const tenths = Math.round(Math.abs(dec) * 36000);
+  const degrees = Math.floor(tenths / 36000);
+  const minutes = String(Math.floor((tenths % 36000) / 600)).padStart(2, "0");
+  const seconds = ((tenths % 600) / 10).toFixed(1).padStart(4, "0");
+  return `${degrees}°${minutes}'${seconds}"${dec < 0 ? negative : positive}`;
 }
 
 function rational(dec: number) {
